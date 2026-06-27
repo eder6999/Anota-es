@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f5c89" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Controle Taxi" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>Controle de Empresas</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="assets/novo-icon-v2.png" type="image/png" />
+    <link rel="apple-touch-icon" href="assets/novo-icon-v2.png" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <section class="cover-screen" id="coverScreen">
+      <img src="assets/cover-transport.png" alt="" class="cover-image" />
+      <div class="cover-overlay"></div>
+      <div class="cover-content">
+        <p class="cover-kicker">Sistema particular</p>
+        <h1>Controle de Empresas e Viagens</h1>
+        <p>
+          Uma visão organizada para sua rotina de transporte, empresas e viagens.
+        </p>
+        <button class="cover-button" id="enterAppButton" type="button">Entrar no sistema</button>
+      </div>
+    </section>
+
+    <main class="app-shell is-hidden" id="appShell">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">Controle particular</p>
+          <h1 id="screenTitle">Controle de Taxi</h1>
+        </div>
+        <div class="header-actions">
+          <button class="secondary-button" id="clearFiltersButton" type="button">Limpar filtros</button>
+          <button class="secondary-button" id="exportButton" type="button">Exportar CSV</button>
+          <button class="secondary-button" id="pdfButton" type="button">Gerar PDF</button>
+          <button class="secondary-button whatsapp-button" id="whatsappButton" type="button">
+            Enviar pelo Zap
+          </button>
+          <button class="primary-button" id="newRecordButton" type="button">Novo registro</button>
+        </div>
+      </header>
+
+      <nav class="tabs" aria-label="Empresas">
+        <button class="tab-button active" type="button" data-tab="levo">Levo</button>
+        <button class="tab-button" type="button" data-tab="bomSabor">Bom Sabor</button>
+        <button class="tab-button" type="button" data-tab="encubatorio">Encubatório</button>
+        <button class="tab-button" type="button" data-tab="viagensClientes">Viagens de Clientes</button>
+        <button class="tab-button" type="button" data-tab="taxista">Taxista</button>
+      </nav>
+
+      <section class="rate-panel" id="ratePanel">
+        <div>
+          <p class="eyebrow">Levo</p>
+          <h2>Controle de Taxi</h2>
+        </div>
+        <label class="field rate-field">
+          Valor do KM
+          <input id="kmRateInput" type="text" inputmode="decimal" placeholder="1,50" />
+        </label>
+        <div class="rate-total">
+          <span>Total filtrado</span>
+          <strong id="levoTotalHeader">R$ 0,00</strong>
+        </div>
+      </section>
+
+      <section class="summary-grid" aria-label="Resumo dos registros filtrados">
+        <article class="summary-card">
+          <span>Registros</span>
+          <strong id="totalRecords">0</strong>
+        </article>
+        <article class="summary-card">
+          <span>Colaboradores</span>
+          <strong id="totalPeople">0</strong>
+        </article>
+        <article class="summary-card">
+          <span>Total</span>
+          <strong id="totalValue">R$ 0,00</strong>
+        </article>
+        <article class="summary-card">
+          <span>Média</span>
+          <strong id="averageValue">R$ 0,00</strong>
+        </article>
+      </section>
+
+      <section class="toolbar" aria-label="Filtros">
+        <label class="field search-field">
+          Buscar
+          <input id="searchInput" type="search" placeholder="Buscar na aba atual" />
+        </label>
+        <label class="field">
+          Colaborador
+          <select id="personFilter">
+            <option value="">Todos</option>
+          </select>
+        </label>
+        <label class="field" id="statusFilterWrap">
+          Situação
+          <select id="statusFilter">
+            <option value="">Todas</option>
+          </select>
+        </label>
+        <label class="field">
+          Mês arquivado
+          <input id="monthFilter" type="month" />
+        </label>
+        <label class="field">
+          De
+          <input id="startFilter" type="date" />
+        </label>
+        <label class="field">
+          Até
+          <input id="endFilter" type="date" />
+        </label>
+      </section>
+
+      <section class="content-grid">
+        <form class="record-form" id="recordForm">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Cadastro</p>
+              <h2 id="formTitle">Novo registro</h2>
+            </div>
+            <button class="ghost-button" id="cancelEditButton" type="button">Cancelar</button>
+          </div>
+
+          <div class="form-fields" id="formFields"></div>
+          <button class="primary-button form-submit" type="submit" id="saveButton">Salvar registro</button>
+        </form>
+
+        <section class="table-panel">
+          <div class="table-header">
+            <div>
+              <p class="eyebrow">Resultado</p>
+              <h2 id="tableTitle">Levo</h2>
+            </div>
+            <span id="resultCount">0 registros</span>
+          </div>
+
+          <div class="table-scroll">
+            <table>
+              <thead id="tableHead"></thead>
+              <tbody id="recordsTable"></tbody>
+            </table>
+          </div>
+
+          <div class="empty-table" id="emptyTable">
+            Nenhum registro encontrado para os filtros atuais.
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

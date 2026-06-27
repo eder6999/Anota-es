@@ -1,0 +1,19 @@
+{
+  "name": "Controle de Empresas e Viagens",
+  "short_name": "Controle Taxi",
+  "description": "Controle particular de empresas, viagens, fretes, PDFs e consultas mensais.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#0b1f2d",
+  "theme_color": "#0f5c89",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "assets/novo-icon-v2.png",
+      "sizes": "2138x2138",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "controle-empresas-viagens",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "firebase:login": "npx firebase-tools login",
+    "firebase:serve": "npx firebase-tools emulators:start --only hosting",
+    "firebase:deploy": "npx firebase-tools deploy --only hosting"
+  },
+  "devDependencies": {
+    "firebase-tools": "^14.0.0"
+  }
+}

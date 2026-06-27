@@ -1,0 +1,48 @@
+{
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      ".firebaserc",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "cleanUrls": true,
+    "trailingSlash": false,
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "manifest.webmanifest",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "assets/novo-icon*.png",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "**/*.@(png|jpg|jpeg|webp)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=604800"
+          }
+        ]
+      }
+    ]
+  }
+}
