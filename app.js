@@ -56,10 +56,12 @@ const configs = {
     title: "Viagens de Clientes",
     screenTitle: "Viagens de Clientes",
     personField: "collaborator",
+    personLabel: "Cliente",
+    peopleLabel: "Clientes",
     valueField: "value",
     columns: [
       { key: "date", label: "Data", type: "date" },
-      { key: "collaborator", label: "Colaborador", type: "text" },
+      { key: "collaborator", label: "Clientes", type: "text" },
       { key: "description", label: "Descrição", type: "text" },
       { key: "value", label: "Valor", type: "money" },
     ],
@@ -133,7 +135,9 @@ const elements = {
   monthFilter: document.querySelector("#monthFilter"),
   newRecordButton: document.querySelector("#newRecordButton"),
   pdfButton: document.querySelector("#pdfButton"),
+  peopleSummaryLabel: document.querySelector("#peopleSummaryLabel"),
   personFilter: document.querySelector("#personFilter"),
+  personFilterLabel: document.querySelector("#personFilterLabel"),
   ratePanel: document.querySelector("#ratePanel"),
   recordForm: document.querySelector("#recordForm"),
   recordsTable: document.querySelector("#recordsTable"),
@@ -370,6 +374,8 @@ function render() {
   });
   elements.screenTitle.textContent = config.screenTitle;
   elements.tableTitle.textContent = config.title;
+  elements.peopleSummaryLabel.textContent = config.peopleLabel || "Colaboradores";
+  elements.personFilterLabel.textContent = config.personLabel || "Colaborador";
   elements.ratePanel.classList.toggle("hidden", state.activeTab !== "levo");
   elements.statusFilterWrap.classList.toggle("hidden", state.activeTab !== "levo");
   elements.kmRateInput.value = state.kmRate;
@@ -585,10 +591,40 @@ function exportCsv() {
 }
 
 function exportPdf() {
-  downloadBlob(new Blob([createPdf(buildReportLines())], { type: "application/pdf" }), `${getConfig().title}_${getArchiveSuffix()}_registros.pdf`);
+  downloadBlob(createPdfBlob(), getPdfFilename());
 }
 
-function shareWhatsApp() {
+async function shareWhatsApp() {
+  const pdfBlob = createPdfBlob();
+  const pdfFile = new File([pdfBlob], getPdfFilename(), { type: "application/pdf" });
+  const message = buildShareMessage();
+
+  if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+    try {
+      await navigator.share({
+        title: getConfig().title,
+        text: message,
+        files: [pdfFile],
+      });
+      return;
+    } catch (error) {
+      if (error.name === "AbortError") return;
+    }
+  }
+
+  downloadBlob(pdfBlob, getPdfFilename());
+  window.open(`https://wa.me/?text=${encodeURIComponent(`${message}\n\nPDF baixado no aparelho. Anexe o arquivo baixado nesta conversa.`)}`, "_blank", "noopener");
+}
+
+function createPdfBlob() {
+  return new Blob([createPdf(buildReportLines())], { type: "application/pdf" });
+}
+
+function getPdfFilename() {
+  return `${getConfig().title}_${getArchiveSuffix()}_registros.pdf`;
+}
+
+function buildShareMessage() {
   const config = getConfig();
   const records = getSortedRecords();
   const total = records.reduce((sum, record) => sum + Number(record[config.valueField] || 0), 0);
@@ -604,8 +640,7 @@ function shareWhatsApp() {
   const more = records.length > 8 ? `\n...e mais ${records.length - 8} registro(s).` : "";
   const archiveText = state.filters.archiveMonth ? `\nMês: ${formatArchiveMonth(state.filters.archiveMonth)}` : "";
   const totalText = valueHidden ? "Oculto" : moneyFormatter.format(total);
-  const message = `${config.title}${archiveText}\nRegistros: ${records.length}\nTotal: ${totalText}\n\n${lines || "Nenhum registro encontrado."}${more}`;
-  window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener");
+  return `${config.title}${archiveText}\nRegistros: ${records.length}\nTotal: ${totalText}\n\n${lines || "Nenhum registro encontrado."}${more}`;
 }
 
 function buildReportLines() {

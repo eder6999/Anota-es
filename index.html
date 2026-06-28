@@ -9,13 +9,13 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <title>Controle de Empresas</title>
     <link rel="manifest" href="manifest.webmanifest" />
-    <link rel="icon" href="assets/novo-icon-v2.png" type="image/png" />
-    <link rel="apple-touch-icon" href="assets/novo-icon-v2.png" />
+    <link rel="icon" href="assets/app-icon-192.png" type="image/png" />
+    <link rel="apple-touch-icon" href="assets/app-icon-512.png" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <section class="cover-screen" id="coverScreen">
-      <img src="assets/cover-transport.png" alt="" class="cover-image" />
+      <img src="assets/cover-transport-1920x1080.png" alt="" class="cover-image" />
       <div class="cover-overlay"></div>
       <div class="cover-content">
         <p class="cover-kicker">Sistema particular</p>
@@ -73,7 +73,7 @@
           <strong id="totalRecords">0</strong>
         </article>
         <article class="summary-card">
-          <span>Colaboradores</span>
+          <span id="peopleSummaryLabel">Colaboradores</span>
           <strong id="totalPeople">0</strong>
         </article>
         <article class="summary-card">
@@ -92,7 +92,7 @@
           <input id="searchInput" type="search" placeholder="Buscar na aba atual" />
         </label>
         <label class="field">
-          Colaborador
+          <span id="personFilterLabel">Colaborador</span>
           <select id="personFilter">
             <option value="">Todos</option>
           </select>

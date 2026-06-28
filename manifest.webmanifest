@@ -10,8 +10,14 @@
   "orientation": "portrait",
   "icons": [
     {
-      "src": "assets/novo-icon-v2.png",
-      "sizes": "2138x2138",
+      "src": "assets/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/app-icon-512.png",
+      "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
     }

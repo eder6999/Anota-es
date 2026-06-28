@@ -17,6 +17,24 @@
     ],
     "headers": [
       {
+        "source": "index.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "**/*.@(js|css)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
         "source": "manifest.webmanifest",
         "headers": [
           {
@@ -26,7 +44,7 @@
         ]
       },
       {
-        "source": "assets/novo-icon*.png",
+        "source": "assets/@(app-icon*|cover-transport-1920x1080).png",
         "headers": [
           {
             "key": "Cache-Control",
