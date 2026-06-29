@@ -123,6 +123,7 @@ const elements = {
   appShell: document.querySelector("#appShell"),
   cancelEditButton: document.querySelector("#cancelEditButton"),
   clearFiltersButton: document.querySelector("#clearFiltersButton"),
+  clearTabButton: document.querySelector("#clearTabButton"),
   coverScreen: document.querySelector("#coverScreen"),
   emptyTable: document.querySelector("#emptyTable"),
   endFilter: document.querySelector("#endFilter"),
@@ -130,11 +131,16 @@ const elements = {
   exportButton: document.querySelector("#exportButton"),
   formFields: document.querySelector("#formFields"),
   formTitle: document.querySelector("#formTitle"),
+  importExcelButton: document.querySelector("#importExcelButton"),
   kmRateInput: document.querySelector("#kmRateInput"),
   levoTotalHeader: document.querySelector("#levoTotalHeader"),
   monthFilter: document.querySelector("#monthFilter"),
   newRecordButton: document.querySelector("#newRecordButton"),
   pdfButton: document.querySelector("#pdfButton"),
+  pasteArea: document.querySelector("#pasteArea"),
+  pasteHelp: document.querySelector("#pasteHelp"),
+  pasteModal: document.querySelector("#pasteModal"),
+  pasteTitle: document.querySelector("#pasteTitle"),
   peopleSummaryLabel: document.querySelector("#peopleSummaryLabel"),
   personFilter: document.querySelector("#personFilter"),
   personFilterLabel: document.querySelector("#personFilterLabel"),
@@ -145,6 +151,9 @@ const elements = {
   saveButton: document.querySelector("#saveButton"),
   screenTitle: document.querySelector("#screenTitle"),
   searchInput: document.querySelector("#searchInput"),
+  clearPasteButton: document.querySelector("#clearPasteButton"),
+  closePasteButton: document.querySelector("#closePasteButton"),
+  confirmPasteButton: document.querySelector("#confirmPasteButton"),
   startFilter: document.querySelector("#startFilter"),
   statusFilter: document.querySelector("#statusFilter"),
   statusFilterWrap: document.querySelector("#statusFilterWrap"),
@@ -207,6 +216,8 @@ function bindEvents() {
   elements.newRecordButton.addEventListener("click", startNewRecord);
   elements.cancelEditButton.addEventListener("click", startNewRecord);
   elements.clearFiltersButton.addEventListener("click", clearFilters);
+  elements.clearTabButton.addEventListener("click", clearCurrentTab);
+  elements.importExcelButton.addEventListener("click", openPasteModal);
   elements.exportButton.addEventListener("click", exportCsv);
   elements.pdfButton.addEventListener("click", exportPdf);
   elements.whatsappButton.addEventListener("click", shareWhatsApp);
@@ -217,6 +228,9 @@ function bindEvents() {
   elements.startFilter.addEventListener("input", (event) => updateFilter("start", event.target.value));
   elements.endFilter.addEventListener("input", (event) => updateFilter("end", event.target.value));
   elements.kmRateInput.addEventListener("input", updateKmRate);
+  elements.closePasteButton.addEventListener("click", closePasteModal);
+  elements.clearPasteButton.addEventListener("click", () => (elements.pasteArea.value = ""));
+  elements.confirmPasteButton.addEventListener("click", importPastedRows);
 }
 
 function enterApp() {
@@ -289,6 +303,182 @@ function saveFromForm(event) {
   render();
 }
 
+function openPasteModal() {
+  const config = getConfig();
+  elements.pasteTitle.textContent = `Colar Excel - ${config.title}`;
+  elements.pasteHelp.textContent = `Copie no Excel as colunas nesta ordem: ${config.columns
+    .map((column) => column.label)
+    .join(" | ")}. Pode colar com ou sem cabeçalho.`;
+  elements.pasteArea.value = "";
+  elements.pasteModal.classList.remove("hidden");
+  elements.pasteArea.focus();
+}
+
+function closePasteModal() {
+  elements.pasteModal.classList.add("hidden");
+}
+
+function importPastedRows() {
+  const text = elements.pasteArea.value.trim();
+  if (!text) {
+    window.alert("Cole as linhas copiadas do Excel antes de importar.");
+    return;
+  }
+
+  const config = getConfig();
+  const imported = parsePastedRecords(text, config);
+  if (!imported.length) {
+    window.alert("Não encontrei nenhuma linha válida para importar.");
+    return;
+  }
+
+  state.data[state.activeTab].push(...imported.map((record) => withId(record)));
+  saveState();
+  closePasteModal();
+  render();
+  startNewRecord();
+  window.alert(`${imported.length} registro(s) importado(s).`);
+}
+
+function parsePastedRecords(text, config) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line, index) => !isHeaderRow(line, config, index))
+    .map((line) => rowToRecord(splitPastedLine(line), config))
+    .filter(Boolean);
+}
+
+function splitPastedLine(line) {
+  if (line.includes("\t")) return line.split("\t");
+  if (line.includes(";")) return line.split(";");
+  return line.split(",");
+}
+
+function isHeaderRow(line, config, index) {
+  if (index > 0) return false;
+  const normalizedLine = normalize(line);
+  return config.columns.some((column) => normalizedLine.includes(normalize(column.label)));
+}
+
+function rowToRecord(cells, config) {
+  if (state.activeTab !== "levo") return rowToSimpleRecord(cells, config);
+
+  let record = {};
+  config.columns.forEach((column, index) => {
+    const rawValue = String(cells[index] ?? "").trim();
+    if (!rawValue) return;
+    record[column.key] = parseImportedValue(rawValue, column);
+  });
+
+  if (!record.date && !Object.keys(record).some((key) => key !== "date")) return null;
+
+  if (state.activeTab === "levo") {
+    record.situation = record.situation || "CONCLUÍDO";
+    record = calculateLevo(record);
+  }
+
+  return record;
+}
+
+function rowToSimpleRecord(cells, config) {
+  const values = cells.map((cell) => String(cell ?? "").trim());
+  const source = normalizeSimpleImportRow(values, config);
+  let record = {};
+
+  config.columns.forEach((column, index) => {
+    const rawValue = String(source[index] ?? "").trim();
+    if (!rawValue) return;
+    record[column.key] = parseImportedValue(rawValue, column);
+  });
+
+  if (!record.date && !record.collaborator && !record.description && !record.value) return null;
+  return record;
+}
+
+function normalizeSimpleImportRow(values, config) {
+  if (looksLikeLevoRow(values)) return compactLevoLikeRow(values);
+  return compactSimpleRow(values);
+}
+
+function looksLikeLevoRow(values) {
+  return values.length >= 7 && isDateLike(values[1]) && Boolean(values[3]) && Boolean(values[4]);
+}
+
+function compactLevoLikeRow(values) {
+  return [
+    values[1] || values[0],
+    values[3] || values[1],
+    values[4] || values[2],
+    pickMoneyCell(values.slice(6)) || values[6] || values[3],
+  ];
+}
+
+function compactSimpleRow(values) {
+  const dateIndex = values.findIndex((value) => isDateLike(value));
+  const valueIndex = findMoneyCellIndex(values);
+  const textValues = values.filter((value, index) => {
+    if (!value || value === "-") return false;
+    if (index === dateIndex || index === valueIndex) return false;
+    if (normalize(value) === "r$") return false;
+    if (looksNumeric(value)) return false;
+    return true;
+  });
+
+  return [
+    dateIndex >= 0 ? values[dateIndex] : values[0],
+    textValues[0] || values[1],
+    textValues.slice(1).join(" - ") || values[2],
+    valueIndex >= 0 ? values[valueIndex] : pickMoneyCell(values),
+  ];
+}
+
+function pickMoneyCell(values) {
+  return values.find((value) => parseDecimal(String(value).replace(/^R\$\s*/i, "")) > 0) || "";
+}
+
+function findMoneyCellIndex(values) {
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    const value = String(values[index] ?? "").trim();
+    if (!value || normalize(value) === "r$") continue;
+    if (parseDecimal(value.replace(/^R\$\s*/i, "")) > 0) return index;
+  }
+  return -1;
+}
+
+function looksNumeric(value) {
+  return parseDecimal(String(value).replace(/^R\$\s*/i, "")) > 0;
+}
+
+function parseImportedValue(value, column) {
+  if (column.type === "date") return parseImportedDate(value);
+  if (column.type === "money" || column.type === "number") return parseDecimal(value.replace(/^R\$\s*/i, ""));
+  if (column.key === "situation") return value.toUpperCase();
+  return value;
+}
+
+function parseImportedDate(value) {
+  const text = String(value).trim();
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) return text;
+
+  const brMatch = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (brMatch) {
+    const day = brMatch[1].padStart(2, "0");
+    const month = brMatch[2].padStart(2, "0");
+    const year = brMatch[3].length === 2 ? `20${brMatch[3]}` : brMatch[3];
+    return `${year}-${month}-${day}`;
+  }
+
+  return text;
+}
+
+function isDateLike(value) {
+  const text = String(value ?? "").trim();
+  return /^(\d{4})-(\d{2})-(\d{2})$/.test(text) || /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.test(text);
+}
+
 function editRecord(id) {
   const record = getRecords().find((item) => item.id === id);
   if (!record) return;
@@ -311,6 +501,23 @@ function deleteRecord(id) {
   if (state.editingId === id) state.editingId = null;
   saveState();
   render();
+  startNewRecord();
+}
+
+function clearCurrentTab() {
+  const config = getConfig();
+  const count = getRecords().length;
+  if (!count) {
+    window.alert(`A aba ${config.title} já está vazia.`);
+    return;
+  }
+
+  const confirmed = window.confirm(`Excluir todos os ${count} registro(s) da aba ${config.title}?`);
+  if (!confirmed) return;
+
+  state.data[state.activeTab] = [];
+  state.editingId = null;
+  clearFilters();
   startNewRecord();
 }
 

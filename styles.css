@@ -222,6 +222,12 @@ button {
   color: #17633a;
 }
 
+.danger-button {
+  border-color: rgba(179, 49, 45, 0.35);
+  background: #fff1f0;
+  color: var(--danger);
+}
+
 .rate-panel {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) 170px 190px;
@@ -291,7 +297,8 @@ button {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -302,9 +309,15 @@ select {
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px #e5f0fb;
+}
+
+textarea {
+  min-height: 220px;
+  resize: vertical;
 }
 
 input[readonly] {
@@ -510,6 +523,43 @@ tbody tr:hover {
 
 .empty-table.show {
   display: block;
+}
+
+.paste-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(10, 22, 32, 0.58);
+}
+
+.paste-card {
+  display: grid;
+  width: min(760px, 100%);
+  max-height: calc(100vh - 36px);
+  gap: 14px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 18px;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.22);
+}
+
+.paste-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.paste-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
 }
 
 .hidden {

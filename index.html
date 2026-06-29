@@ -11,14 +11,14 @@
     <meta name="apple-mobile-web-app-title" content="Controle Taxi" />
     <meta name="mobile-web-app-capable" content="yes" />
     <title>Controle de Empresas</title>
-    <link rel="manifest" href="manifest.webmanifest?v=20260628" />
-    <link rel="icon" href="assets/app-icon-192.png?v=20260628" type="image/png" />
-    <link rel="apple-touch-icon" href="assets/app-icon-512.png?v=20260628" />
-    <link rel="stylesheet" href="styles.css?v=20260628" />
+    <link rel="manifest" href="manifest.webmanifest?v=20260629-4" />
+    <link rel="icon" href="assets/app-icon-192.png?v=20260629-4" type="image/png" />
+    <link rel="apple-touch-icon" href="assets/app-icon-512.png?v=20260629-4" />
+    <link rel="stylesheet" href="styles.css?v=20260629-4" />
   </head>
   <body>
     <section class="cover-screen" id="coverScreen">
-      <img src="assets/cover-transport-1920x1080.png?v=20260628" alt="" class="cover-image" />
+      <img src="assets/cover-transport-1920x1080.png?v=20260629-4" alt="" class="cover-image" />
       <div class="cover-overlay"></div>
       <div class="cover-content">
         <p class="cover-kicker">Sistema particular</p>
@@ -38,6 +38,8 @@
         </div>
         <div class="header-actions">
           <button class="secondary-button" id="clearFiltersButton" type="button">Limpar filtros</button>
+          <button class="secondary-button" id="importExcelButton" type="button">Colar Excel</button>
+          <button class="secondary-button danger-button" id="clearTabButton" type="button">Limpar aba</button>
           <button class="secondary-button" id="exportButton" type="button">Exportar CSV</button>
           <button class="secondary-button" id="pdfButton" type="button">Gerar PDF</button>
           <button class="secondary-button whatsapp-button" id="whatsappButton" type="button">
@@ -157,6 +159,24 @@
       </section>
     </main>
 
-    <script src="app.js?v=20260628"></script>
+    <section class="paste-modal hidden" id="pasteModal" aria-label="Colar dados do Excel">
+      <div class="paste-card">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Importar</p>
+            <h2 id="pasteTitle">Colar Excel</h2>
+          </div>
+          <button class="ghost-button" id="closePasteButton" type="button">Fechar</button>
+        </div>
+        <p class="paste-help" id="pasteHelp"></p>
+        <textarea id="pasteArea" rows="10" placeholder="Cole aqui as linhas copiadas do Excel"></textarea>
+        <div class="paste-actions">
+          <button class="ghost-button" id="clearPasteButton" type="button">Limpar</button>
+          <button class="primary-button" id="confirmPasteButton" type="button">Importar linhas</button>
+        </div>
+      </div>
+    </section>
+
+    <script src="app.js?v=20260629-4"></script>
   </body>
 </html>
