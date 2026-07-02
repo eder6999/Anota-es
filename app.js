@@ -824,7 +824,184 @@ async function shareWhatsApp() {
 }
 
 function createPdfBlob() {
-  return new Blob([createPdf(buildReportLines())], { type: "application/pdf" });
+  return new Blob([createTablePdf()], { type: "application/pdf" });
+}
+
+function createTablePdf() {
+  const config = getConfig();
+  const records = getSortedRecords();
+  const columns = getReportColumns(config);
+  const total = records.reduce((sum, record) => sum + Number(record[config.valueField] || 0), 0);
+  const valueHidden = isColumnHidden(config.valueField);
+  const page = { width: 842, height: 595, margin: 24 };
+  const fontSize = state.activeTab === "levo" ? 7.4 : 10;
+  const headerFontSize = state.activeTab === "levo" ? 7.2 : 9.5;
+  const rowHeight = state.activeTab === "levo" ? 22 : 27;
+  const headerHeight = state.activeTab === "levo" ? 23 : 26;
+  const tableTop = 492;
+  const tableWidth = page.width - page.margin * 2;
+  const columnWidths = getPdfColumnWidths(columns, tableWidth);
+  const rowsPerPage = Math.max(1, Math.floor((tableTop - page.margin - headerHeight) / rowHeight));
+  const chunks = [];
+  for (let index = 0; index < Math.max(records.length, 1); index += rowsPerPage) {
+    chunks.push(records.length ? records.slice(index, index + rowsPerPage) : []);
+  }
+
+  const objects = [];
+  const pageRefs = [];
+  objects.push("<< /Type /Catalog /Pages 2 0 R >>");
+  objects.push("");
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>");
+
+  chunks.forEach((pageRows, pageIndex) => {
+    const content = buildPdfPageContent({
+      columns,
+      columnWidths,
+      config,
+      fontSize,
+      headerFontSize,
+      headerHeight,
+      page,
+      pageIndex,
+      pageRows,
+      rowHeight,
+      tableTop,
+      total,
+      totalPages: chunks.length,
+      valueHidden,
+    });
+    const contentId = objects.length + 1;
+    objects.push(`<< /Length ${toWinAnsi(content).length} >>\nstream\n${content}\nendstream`);
+    const pageId = objects.length + 1;
+    pageRefs.push(pageId);
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${page.width} ${page.height}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentId} 0 R >>`);
+  });
+
+  objects[1] = `<< /Type /Pages /Kids [${pageRefs.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageRefs.length} >>`;
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(toWinAnsi(pdf).length);
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = toWinAnsi(pdf).length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => (pdf += `${String(offset).padStart(10, "0")} 00000 n \n`));
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return Uint8Array.from(toWinAnsi(pdf), (char) => char.charCodeAt(0));
+}
+
+function buildPdfPageContent(options) {
+  const {
+    columns,
+    columnWidths,
+    config,
+    fontSize,
+    headerFontSize,
+    headerHeight,
+    page,
+    pageIndex,
+    pageRows,
+    rowHeight,
+    tableTop,
+    total,
+    totalPages,
+    valueHidden,
+  } = options;
+  const commands = ["0.35 w", "0.08 0.12 0.16 RG"];
+  const tableLeft = page.margin;
+  const tableWidth = columnWidths.reduce((sum, width) => sum + width, 0);
+  const infoLines = [
+    `Gerado em: ${new Date().toLocaleString("pt-BR")}`,
+    `Registros: ${getSortedRecords().length}`,
+    `Total: ${valueHidden ? "Oculto" : moneyFormatter.format(total)}`,
+    state.filters.archiveMonth ? `Mes arquivado: ${formatArchiveMonth(state.filters.archiveMonth)}` : "Mes arquivado: Todos",
+    state.activeTab === "levo" ? `Valor do KM: ${moneyFormatter.format(state.kmRate)}` : "",
+  ].filter(Boolean);
+
+  addPdfText(commands, config.title, page.margin, 562, 16, "F2");
+  infoLines.forEach((line, index) => addPdfText(commands, line, page.margin, 540 - index * 13, 9, "F1"));
+  addPdfText(commands, `Pagina ${pageIndex + 1} de ${totalPages}`, page.width - 105, 562, 9, "F1");
+
+  let y = tableTop;
+  commands.push("0.88 0.93 0.98 rg", `${fmt(tableLeft)} ${fmt(y - headerHeight)} ${fmt(tableWidth)} ${fmt(headerHeight)} re f`, "0.08 0.12 0.16 RG");
+  drawPdfRow(commands, tableLeft, y, columnWidths, headerHeight);
+  let x = tableLeft;
+  columns.forEach((column, index) => {
+    addPdfText(commands, fitPdfText(column.label, columnWidths[index], headerFontSize), x + 4, y - 15, headerFontSize, "F2");
+    x += columnWidths[index];
+  });
+
+  if (!pageRows.length) {
+    y -= headerHeight;
+    drawPdfRow(commands, tableLeft, y, [tableWidth], rowHeight);
+    addPdfText(commands, "Nenhum registro encontrado para os filtros atuais.", tableLeft + 6, y - 17, 10, "F1");
+    return commands.join("\n");
+  }
+
+  pageRows.forEach((record) => {
+    y -= rowHeight;
+    drawPdfRow(commands, tableLeft, y, columnWidths, rowHeight);
+    let cellX = tableLeft;
+    columns.forEach((column, index) => {
+      const text = displayValue(record, column, true) || "-";
+      const maxWidth = columnWidths[index] - 8;
+      const textX = column.type === "money" || column.key === "km" ? cellX + columnWidths[index] - getApproxTextWidth(fitPdfText(text, maxWidth, fontSize), fontSize) - 4 : cellX + 4;
+      addPdfText(commands, fitPdfText(text, maxWidth, fontSize), Math.max(cellX + 4, textX), y - Math.max(15, rowHeight / 2 + 4), fontSize, "F1");
+      cellX += columnWidths[index];
+    });
+  });
+
+  return commands.join("\n");
+}
+
+function drawPdfRow(commands, x, topY, widths, height) {
+  let currentX = x;
+  const totalWidth = widths.reduce((sum, width) => sum + width, 0);
+  commands.push(`${fmt(x)} ${fmt(topY - height)} ${fmt(totalWidth)} ${fmt(height)} re S`);
+  widths.slice(0, -1).forEach((width) => {
+    currentX += width;
+    commands.push(`${fmt(currentX)} ${fmt(topY)} m ${fmt(currentX)} ${fmt(topY - height)} l S`);
+  });
+}
+
+function addPdfText(commands, text, x, y, size, font = "F1") {
+  commands.push("0 0 0 rg", "BT", `/${font} ${fmt(size)} Tf`, `${fmt(x)} ${fmt(y)} Td`, `(${pdfEscape(text)}) Tj`, "ET");
+}
+
+function getPdfColumnWidths(columns, tableWidth) {
+  const levoWeights = {
+    registration: 58,
+    date: 62,
+    cc: 34,
+    collaborator: 130,
+    description: 166,
+    authorizer: 78,
+    value: 72,
+    kmStart: 58,
+    kmEnd: 64,
+    situation: 75,
+    km: 38,
+  };
+  const simpleWeights = { date: 82, collaborator: 190, description: 410, value: 112 };
+  const weights = columns.map((column) => (state.activeTab === "levo" ? levoWeights[column.key] : simpleWeights[column.key]) || 90);
+  const totalWeight = weights.reduce((sum, width) => sum + width, 0);
+  return weights.map((width) => (width / totalWeight) * tableWidth);
+}
+
+function fitPdfText(value, width, fontSize) {
+  const text = toWinAnsi(String(value ?? "").replace(/\s+/g, " ").trim());
+  const maxChars = Math.max(3, Math.floor(width / (fontSize * 0.52)));
+  return text.length > maxChars ? `${text.slice(0, maxChars - 1)}.` : text;
+}
+
+function getApproxTextWidth(text, fontSize) {
+  return String(text ?? "").length * fontSize * 0.52;
+}
+
+function fmt(value) {
+  return Number(value).toFixed(2).replace(/\.?0+$/, "");
 }
 
 function getPdfFilename() {
