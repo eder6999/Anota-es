@@ -11,14 +11,14 @@
     <meta name="apple-mobile-web-app-title" content="Controle Taxi" />
     <meta name="mobile-web-app-capable" content="yes" />
     <title>Controle de Empresas</title>
-    <link rel="manifest" href="manifest.webmanifest?v=20260701-2" />
-    <link rel="icon" href="assets/app-icon-192.png?v=20260701-2" type="image/png" />
-    <link rel="apple-touch-icon" href="assets/app-icon-512.png?v=20260701-2" />
-    <link rel="stylesheet" href="styles.css?v=20260701-2" />
+    <link rel="manifest" href="manifest.webmanifest?v=20260713-1" />
+    <link rel="icon" href="assets/app-icon-192.png?v=20260713-1" type="image/png" />
+    <link rel="apple-touch-icon" href="assets/app-icon-512.png?v=20260713-1" />
+    <link rel="stylesheet" href="styles.css?v=20260713-1" />
   </head>
   <body>
     <section class="cover-screen" id="coverScreen">
-      <img src="assets/cover-transport-1920x1080.png?v=20260701-2" alt="" class="cover-image" />
+      <img src="assets/cover-transport-1920x1080.png?v=20260713-1" alt="" class="cover-image" />
       <div class="cover-overlay"></div>
       <div class="cover-content">
         <p class="cover-kicker">Sistema particular</p>
@@ -38,6 +38,7 @@
         </div>
         <div class="header-actions">
           <button class="secondary-button" id="clearFiltersButton" type="button">Limpar filtros</button>
+          <button class="secondary-button" id="companySettingsButton" type="button">Dados da empresa</button>
           <button class="secondary-button" id="importExcelButton" type="button">Colar Excel</button>
           <button class="secondary-button danger-button" id="clearTabButton" type="button">Limpar aba</button>
           <button class="secondary-button" id="exportButton" type="button">Exportar CSV</button>
@@ -55,6 +56,7 @@
         <button class="tab-button" type="button" data-tab="encubatorio">Encubatório</button>
         <button class="tab-button" type="button" data-tab="viagensClientes">Viagens de Clientes</button>
         <button class="tab-button" type="button" data-tab="taxista">Taxista</button>
+        <button class="tab-button" type="button" data-tab="orcamento">Orçamento</button>
       </nav>
 
       <section class="rate-panel" id="ratePanel">
@@ -95,6 +97,10 @@
         <label class="field search-field">
           Buscar
           <input id="searchInput" type="search" placeholder="Buscar na aba atual" />
+        </label>
+        <label class="field" id="authorizerFilterWrap">
+          Autorizador
+          <select id="authorizerFilter" multiple size="3"></select>
         </label>
         <label class="field">
           <span id="personFilterLabel">Colaborador</span>
@@ -177,6 +183,51 @@
       </div>
     </section>
 
-    <script src="app.js?v=20260701-2"></script>
+    <section class="paste-modal hidden" id="companyModal" aria-label="Dados da empresa">
+      <form class="paste-card" id="companyForm">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Configuração</p>
+            <h2>Dados da empresa</h2>
+          </div>
+          <button class="ghost-button" id="closeCompanyButton" type="button">Fechar</button>
+        </div>
+        <div class="form-fields">
+          <label class="field">
+            Empresa
+            <input id="companyNameInput" type="text" />
+          </label>
+          <label class="field">
+            Slogan
+            <input id="companySloganInput" type="text" />
+          </label>
+          <label class="field">
+            CNPJ
+            <input id="companyCnpjInput" type="text" />
+          </label>
+          <label class="field">
+            E-mail
+            <input id="companyEmailInput" type="email" />
+          </label>
+          <label class="field">
+            Telefone
+            <input id="companyPhoneInput" type="text" />
+          </label>
+          <label class="field">
+            Endereço
+            <input id="companyAddressInput" type="text" />
+          </label>
+          <label class="field">
+            Cidade / UF
+            <input id="companyCityInput" type="text" />
+          </label>
+        </div>
+        <div class="paste-actions">
+          <button class="primary-button" type="submit">Salvar dados</button>
+        </div>
+      </form>
+    </section>
+
+    <script type="module" src="app.js?v=20260713-1"></script>
   </body>
 </html>

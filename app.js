@@ -1,11 +1,24 @@
+import { listenCloudState, loadCloudState, saveCloudState } from "./firestore.js";
+
 const STORAGE_KEY = "controle-empresas-taxi:v5";
 const DEFAULT_KM_RATE = 1.5;
+const FIRESTORE_MIGRATION_KEY = "controle-empresas-taxi:firestore-seeded";
 
 const moneyFormatter = new Intl.NumberFormat("pt-BR", {
   currency: "BRL",
   style: "currency",
 });
 const numberFormatter = new Intl.NumberFormat("pt-BR");
+
+const defaultCompany = {
+  name: "Lizardo Car",
+  slogan: "",
+  cnpj: "32.394.984/0001-29",
+  email: "lizardocar@hotmail.com",
+  phone: "44-99984-7192",
+  address: "Rua Moyses Mendes Sanches, n 310",
+  city: "Iporã - PR",
+};
 
 const configs = {
   levo: {
@@ -15,6 +28,7 @@ const configs = {
     statusField: "situation",
     valueField: "value",
     columns: [
+      { key: "monthNumber", label: "Nº", type: "sequence" },
       { key: "registration", label: "Matrícula", type: "text" },
       { key: "date", label: "Data", type: "date" },
       { key: "cc", label: "CC", type: "text" },
@@ -34,6 +48,7 @@ const configs = {
     personField: "collaborator",
     valueField: "value",
     columns: [
+      { key: "monthNumber", label: "Nº", type: "sequence" },
       { key: "date", label: "Data", type: "date" },
       { key: "collaborator", label: "Colaborador", type: "text" },
       { key: "description", label: "Descrição", type: "text" },
@@ -46,6 +61,7 @@ const configs = {
     personField: "collaborator",
     valueField: "value",
     columns: [
+      { key: "monthNumber", label: "Nº", type: "sequence" },
       { key: "date", label: "Data", type: "date" },
       { key: "collaborator", label: "Colaborador", type: "text" },
       { key: "description", label: "Descrição", type: "text" },
@@ -70,12 +86,41 @@ const configs = {
     title: "Taxista",
     screenTitle: "Taxista",
     personField: "collaborator",
+    statusField: "paymentStatus",
     valueField: "value",
+    taxistaPaymentColumn: { key: "paymentStatus", label: "Situacao", type: "select", options: ["DEVENDO", "PAGO"] },
     columns: [
       { key: "date", label: "Data", type: "date" },
       { key: "collaborator", label: "Taxista", type: "text" },
       { key: "description", label: "Descrição", type: "text" },
       { key: "value", label: "Valor", type: "money" },
+    ],
+  },
+  orcamento: {
+    title: "Orçamento",
+    screenTitle: "Orçamento de Viagem",
+    personField: "client",
+    personLabel: "Cliente",
+    peopleLabel: "Clientes",
+    statusField: "status",
+    valueField: "total",
+    columns: [
+      { key: "date", label: "Data", type: "date" },
+      { key: "client", label: "Cliente", type: "text" },
+      { key: "origin", label: "Origem", type: "text" },
+      { key: "destination", label: "Destino", type: "text" },
+      { key: "tripType", label: "Tipo da viagem", type: "text" },
+      { key: "kmEstimated", label: "KM estimado", type: "number" },
+      { key: "kmRate", label: "Valor por KM", type: "money" },
+      { key: "toll", label: "Pedágio", type: "money" },
+      { key: "food", label: "Alimentação", type: "money" },
+      { key: "lodging", label: "Hospedagem", type: "money" },
+      { key: "otherCosts", label: "Outros custos", type: "money" },
+      { key: "discount", label: "Desconto", type: "money" },
+      { key: "validity", label: "Validade", type: "text" },
+      { key: "status", label: "Status", type: "select", options: ["EM ABERTO", "APROVADO", "RECUSADO", "CONCLUÍDO"] },
+      { key: "notes", label: "Observações", type: "text" },
+      { key: "total", label: "Total", type: "money", readonly: true },
     ],
   },
 };
@@ -106,24 +151,44 @@ const sampleData = {
     withId({ date: "2026-06-05", collaborator: "Plusval", description: "Viagem de cliente", value: 19530 }),
   ],
   taxista: [],
+  orcamento: [],
 };
 
 const state = {
   activeTab: "levo",
-  data: { levo: [], bomSabor: [], encubatorio: [], viagensClientes: [], taxista: [] },
+  data: { levo: [], bomSabor: [], encubatorio: [], viagensClientes: [], taxista: [], orcamento: [] },
   editingId: null,
-  filters: { search: "", person: "", status: "", archiveMonth: "", start: "", end: "" },
+  filters: { search: "", person: "", status: "", authorizers: [], archiveMonth: "", start: "", end: "" },
   hiddenColumns: { levo: [] },
   kmRate: DEFAULT_KM_RATE,
   sort: { key: "date", direction: "asc" },
+  company: { ...defaultCompany },
 };
+
+let applyingCloudState = false;
+let cloudSaveTimer = null;
+let cloudUnsubscribe = null;
+let pdfLogoPromise = null;
 
 const elements = {
   averageValue: document.querySelector("#averageValue"),
   appShell: document.querySelector("#appShell"),
+  authorizerFilter: document.querySelector("#authorizerFilter"),
+  authorizerFilterWrap: document.querySelector("#authorizerFilterWrap"),
   cancelEditButton: document.querySelector("#cancelEditButton"),
   clearFiltersButton: document.querySelector("#clearFiltersButton"),
   clearTabButton: document.querySelector("#clearTabButton"),
+  closeCompanyButton: document.querySelector("#closeCompanyButton"),
+  companyAddressInput: document.querySelector("#companyAddressInput"),
+  companyCityInput: document.querySelector("#companyCityInput"),
+  companyCnpjInput: document.querySelector("#companyCnpjInput"),
+  companyEmailInput: document.querySelector("#companyEmailInput"),
+  companyForm: document.querySelector("#companyForm"),
+  companyModal: document.querySelector("#companyModal"),
+  companyNameInput: document.querySelector("#companyNameInput"),
+  companyPhoneInput: document.querySelector("#companyPhoneInput"),
+  companySettingsButton: document.querySelector("#companySettingsButton"),
+  companySloganInput: document.querySelector("#companySloganInput"),
   coverScreen: document.querySelector("#coverScreen"),
   emptyTable: document.querySelector("#emptyTable"),
   endFilter: document.querySelector("#endFilter"),
@@ -178,33 +243,101 @@ function calculateLevo(record, rate = state.kmRate) {
   return { ...record, km: informedKm, kmEnd, value };
 }
 
-function loadState() {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved) {
-    const parsed = JSON.parse(saved);
-    Object.assign(state, parsed);
-    state.data = { ...sampleData, ...state.data };
-    state.filters = { search: "", person: "", status: "", archiveMonth: "", start: "", end: "", ...state.filters };
-    state.hiddenColumns = { levo: [], ...state.hiddenColumns };
-    state.editingId = null;
-    return;
+function calculateBudget(record) {
+  const kmEstimated = Number(record.kmEstimated || 0);
+  const kmRate = Number(record.kmRate || 0);
+  const toll = Number(record.toll || 0);
+  const food = Number(record.food || 0);
+  const lodging = Number(record.lodging || 0);
+  const otherCosts = Number(record.otherCosts || 0);
+  const discount = Number(record.discount || 0);
+  const total = kmEstimated * kmRate + toll + food + lodging + otherCosts - discount;
+  return { ...record, total: Math.max(0, total) };
+}
+
+function getLocalDateValue(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+async function loadState() {
+  const localState = readLocalState();
+  try {
+    const cloudState = await loadCloudState();
+    if (cloudState?.data) {
+      applySavedState(cloudState);
+      writeLocalState();
+      return;
+    }
+
+    if (localState?.data) {
+      applySavedState(localState);
+      await saveCloudState(getPersistedState());
+      localStorage.setItem(FIRESTORE_MIGRATION_KEY, "yes");
+      return;
+    }
+  } catch (error) {
+    console.error("Erro ao carregar Firestore. Usando dados locais.", error);
+    if (localState?.data) {
+      applySavedState(localState);
+      return;
+    }
   }
+
   state.data = sampleData;
   saveState();
 }
 
+function readLocalState() {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (!saved) return null;
+  try {
+    return JSON.parse(saved);
+  } catch (error) {
+    console.error("Erro ao ler dados locais.", error);
+    return null;
+  }
+}
+
+function applySavedState(savedState) {
+  Object.assign(state, savedState);
+  state.data = { ...sampleData, ...state.data };
+  state.filters = { search: "", person: "", status: "", authorizers: [], archiveMonth: "", start: "", end: "", ...state.filters };
+  if (!Array.isArray(state.filters.authorizers)) state.filters.authorizers = [];
+  state.hiddenColumns = { levo: [], ...state.hiddenColumns };
+  state.company = { ...defaultCompany, ...state.company };
+  state.editingId = null;
+}
+
+function getPersistedState() {
+  return {
+    activeTab: state.activeTab,
+    data: state.data,
+    filters: state.filters,
+    hiddenColumns: state.hiddenColumns,
+    kmRate: state.kmRate,
+    sort: state.sort,
+    company: state.company,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function writeLocalState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(getPersistedState()));
+}
+
 function saveState() {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({
-      activeTab: state.activeTab,
-      data: state.data,
-      filters: state.filters,
-      hiddenColumns: state.hiddenColumns,
-      kmRate: state.kmRate,
-      sort: state.sort,
-    })
-  );
+  writeLocalState();
+  if (applyingCloudState) return;
+
+  clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = setTimeout(() => {
+    saveCloudState(getPersistedState()).catch((error) => {
+      console.error("Erro ao salvar no Firestore.", error);
+    });
+  }, 250);
 }
 
 function bindEvents() {
@@ -217,6 +350,9 @@ function bindEvents() {
   elements.cancelEditButton.addEventListener("click", startNewRecord);
   elements.clearFiltersButton.addEventListener("click", clearFilters);
   elements.clearTabButton.addEventListener("click", clearCurrentTab);
+  elements.companySettingsButton.addEventListener("click", openCompanyModal);
+  elements.closeCompanyButton.addEventListener("click", closeCompanyModal);
+  elements.companyForm.addEventListener("submit", saveCompanySettings);
   elements.importExcelButton.addEventListener("click", openPasteModal);
   elements.exportButton.addEventListener("click", exportCsv);
   elements.pdfButton.addEventListener("click", exportPdf);
@@ -224,6 +360,12 @@ function bindEvents() {
   elements.searchInput.addEventListener("input", (event) => updateFilter("search", event.target.value));
   elements.personFilter.addEventListener("change", (event) => updateFilter("person", event.target.value));
   elements.statusFilter.addEventListener("change", (event) => updateFilter("status", event.target.value));
+  elements.authorizerFilter.addEventListener("change", () =>
+    updateFilter(
+      "authorizers",
+      [...elements.authorizerFilter.selectedOptions].map((option) => option.value)
+    )
+  );
   elements.monthFilter.addEventListener("input", (event) => updateFilter("archiveMonth", event.target.value));
   elements.startFilter.addEventListener("input", (event) => updateFilter("start", event.target.value));
   elements.endFilter.addEventListener("input", (event) => updateFilter("end", event.target.value));
@@ -241,7 +383,7 @@ function enterApp() {
 function setActiveTab(tabKey) {
   state.activeTab = tabKey;
   state.editingId = null;
-  state.filters = { search: "", person: "", status: "", archiveMonth: "", start: "", end: "" };
+  state.filters = { search: "", person: "", status: "", authorizers: [], archiveMonth: "", start: "", end: "" };
   state.sort = { key: "date", direction: "asc" };
   saveState();
   render();
@@ -268,11 +410,33 @@ function updateFilter(key, value) {
 }
 
 function getConfig() {
-  return configs[state.activeTab];
+  const config = configs[state.activeTab];
+  if (state.activeTab === "taxista" && config.taxistaPaymentColumn && !config.columns.some((column) => column.key === "paymentStatus")) {
+    return { ...config, columns: [...config.columns, config.taxistaPaymentColumn] };
+  }
+  return config;
 }
 
 function getRecords() {
   return state.data[state.activeTab];
+}
+
+function getInputColumns(config) {
+  return config.columns.filter((column) => column.type !== "sequence");
+}
+
+function getMonthlySequence(record) {
+  const month = getArchiveMonth(record.date || record.createdAt);
+  if (!month) return "";
+  const monthRecords = getRecords()
+    .filter((item) => getArchiveMonth(item.date || item.createdAt) === month)
+    .sort((a, b) => {
+      const dateCompare = String(a.date || "").localeCompare(String(b.date || ""));
+      if (dateCompare) return dateCompare;
+      return String(a.createdAt || a.id || "").localeCompare(String(b.createdAt || b.id || ""));
+    });
+  const index = monthRecords.findIndex((item) => item.id === record.id);
+  return index >= 0 ? index + 1 : "";
 }
 
 function saveFromForm(event) {
@@ -280,7 +444,7 @@ function saveFromForm(event) {
   const config = getConfig();
   let record = {};
 
-  config.columns.forEach((column) => {
+  getInputColumns(config).forEach((column) => {
     const input = document.querySelector(`[name="${column.key}"]`);
     if (!input || column.readonly) return;
     record[column.key] = column.type === "number" || column.type === "money" ? parseDecimal(input.value) : input.value.trim();
@@ -288,6 +452,13 @@ function saveFromForm(event) {
 
   if (state.activeTab === "levo") {
     record = calculateLevo(record);
+  }
+  if (state.activeTab === "orcamento") {
+    record.status = record.status || "EM ABERTO";
+    record = calculateBudget(record);
+  }
+  if (state.activeTab === "taxista") {
+    record.paymentStatus = record.paymentStatus || "DEVENDO";
   }
 
   const records = getRecords();
@@ -306,7 +477,7 @@ function saveFromForm(event) {
 function openPasteModal() {
   const config = getConfig();
   elements.pasteTitle.textContent = `Colar Excel - ${config.title}`;
-  elements.pasteHelp.textContent = `Copie no Excel as colunas nesta ordem: ${config.columns
+  elements.pasteHelp.textContent = `Copie no Excel as colunas nesta ordem: ${getInputColumns(config)
     .map((column) => column.label)
     .join(" | ")}. Pode colar com ou sem cabeçalho.`;
   elements.pasteArea.value = "";
@@ -316,6 +487,38 @@ function openPasteModal() {
 
 function closePasteModal() {
   elements.pasteModal.classList.add("hidden");
+}
+
+function openCompanyModal() {
+  elements.companyNameInput.value = state.company.name || "";
+  elements.companySloganInput.value = state.company.slogan || "";
+  elements.companyCnpjInput.value = state.company.cnpj || "";
+  elements.companyEmailInput.value = state.company.email || "";
+  elements.companyPhoneInput.value = state.company.phone || "";
+  elements.companyAddressInput.value = state.company.address || "";
+  elements.companyCityInput.value = state.company.city || "";
+  elements.companyModal.classList.remove("hidden");
+  elements.companyNameInput.focus();
+}
+
+function closeCompanyModal() {
+  elements.companyModal.classList.add("hidden");
+}
+
+function saveCompanySettings(event) {
+  event.preventDefault();
+  state.company = {
+    name: elements.companyNameInput.value.trim(),
+    slogan: elements.companySloganInput.value.trim(),
+    cnpj: elements.companyCnpjInput.value.trim(),
+    email: elements.companyEmailInput.value.trim(),
+    phone: elements.companyPhoneInput.value.trim(),
+    address: elements.companyAddressInput.value.trim(),
+    city: elements.companyCityInput.value.trim(),
+  };
+  saveState();
+  closeCompanyModal();
+  window.alert("Dados da empresa salvos.");
 }
 
 function importPastedRows() {
@@ -359,14 +562,14 @@ function splitPastedLine(line) {
 function isHeaderRow(line, config, index) {
   if (index > 0) return false;
   const normalizedLine = normalize(line);
-  return config.columns.some((column) => normalizedLine.includes(normalize(column.label)));
+  return getInputColumns(config).some((column) => normalizedLine.includes(normalize(column.label)));
 }
 
 function rowToRecord(cells, config) {
   if (state.activeTab !== "levo") return rowToSimpleRecord(cells, config);
 
   let record = {};
-  config.columns.forEach((column, index) => {
+  getInputColumns(config).forEach((column, index) => {
     const rawValue = String(cells[index] ?? "").trim();
     if (!rawValue) return;
     record[column.key] = parseImportedValue(rawValue, column);
@@ -387,13 +590,14 @@ function rowToSimpleRecord(cells, config) {
   const source = normalizeSimpleImportRow(values, config);
   let record = {};
 
-  config.columns.forEach((column, index) => {
+  getInputColumns(config).forEach((column, index) => {
     const rawValue = String(source[index] ?? "").trim();
     if (!rawValue) return;
     record[column.key] = parseImportedValue(rawValue, column);
   });
 
   if (!record.date && !record.collaborator && !record.description && !record.value) return null;
+  if (state.activeTab === "taxista") record.paymentStatus = record.paymentStatus || "DEVENDO";
   return record;
 }
 
@@ -527,16 +731,23 @@ function startNewRecord() {
   elements.formTitle.textContent = `Novo registro - ${getConfig().title}`;
   elements.saveButton.textContent = "Salvar registro";
   const dateInput = document.querySelector('[name="date"]');
-  if (dateInput) dateInput.value = new Date().toISOString().slice(0, 10);
+  if (dateInput) dateInput.value = getLocalDateValue();
+  const statusInput = document.querySelector('[name="status"]');
+  if (statusInput) statusInput.value = "EM ABERTO";
+  const totalInput = document.querySelector('[name="total"]');
+  if (totalInput) totalInput.value = "0.00";
   const situationInput = document.querySelector('[name="situation"]');
   if (situationInput) situationInput.value = "CONCLUÍDO";
+  const paymentStatusInput = document.querySelector('[name="paymentStatus"]');
+  if (paymentStatusInput) paymentStatusInput.value = "DEVENDO";
 }
 
 function clearFilters() {
-  state.filters = { search: "", person: "", status: "", archiveMonth: "", start: "", end: "" };
+  state.filters = { search: "", person: "", status: "", authorizers: [], archiveMonth: "", start: "", end: "" };
   elements.searchInput.value = "";
   elements.personFilter.value = "";
   elements.statusFilter.value = "";
+  [...elements.authorizerFilter.options].forEach((option) => (option.selected = false));
   elements.monthFilter.value = "";
   elements.startFilter.value = "";
   elements.endFilter.value = "";
@@ -550,14 +761,17 @@ function getFilteredRecords() {
   return getRecords().filter((record) => {
     const content = normalize(config.columns.map((column) => record[column.key]).join(" "));
     const personValue = record[config.personField] || "";
-    const statusValue = config.statusField ? record[config.statusField] || "" : "";
+    const statusValue = getRecordStatusValue(record, config);
+    const authorizerValue = record.authorizer || "";
     const matchesSearch = !search || content.includes(search);
     const matchesPerson = !state.filters.person || personValue === state.filters.person;
     const matchesStatus = !state.filters.status || statusValue === state.filters.status;
+    const matchesAuthorizer =
+      state.activeTab !== "levo" || !state.filters.authorizers.length || state.filters.authorizers.includes(authorizerValue);
     const matchesArchiveMonth = !state.filters.archiveMonth || getArchiveMonth(record.date) === state.filters.archiveMonth;
     const matchesStart = !state.filters.start || record.date >= state.filters.start;
     const matchesEnd = !state.filters.end || record.date <= state.filters.end;
-    return matchesSearch && matchesPerson && matchesStatus && matchesArchiveMonth && matchesStart && matchesEnd;
+    return matchesSearch && matchesPerson && matchesStatus && matchesAuthorizer && matchesArchiveMonth && matchesStart && matchesEnd;
   });
 }
 
@@ -565,8 +779,8 @@ function getSortedRecords() {
   const records = [...getFilteredRecords()];
   const direction = state.sort.direction === "asc" ? 1 : -1;
   records.sort((a, b) => {
-    const aValue = typeof a[state.sort.key] === "number" ? a[state.sort.key] : normalize(a[state.sort.key]);
-    const bValue = typeof b[state.sort.key] === "number" ? b[state.sort.key] : normalize(b[state.sort.key]);
+    const aValue = state.sort.key === "monthNumber" ? getMonthlySequence(a) : typeof a[state.sort.key] === "number" ? a[state.sort.key] : normalize(a[state.sort.key]);
+    const bValue = state.sort.key === "monthNumber" ? getMonthlySequence(b) : typeof b[state.sort.key] === "number" ? b[state.sort.key] : normalize(b[state.sort.key]);
     if (aValue > bValue) return direction;
     if (aValue < bValue) return -direction;
     return 0;
@@ -584,7 +798,8 @@ function render() {
   elements.peopleSummaryLabel.textContent = config.peopleLabel || "Colaboradores";
   elements.personFilterLabel.textContent = config.personLabel || "Colaborador";
   elements.ratePanel.classList.toggle("hidden", state.activeTab !== "levo");
-  elements.statusFilterWrap.classList.toggle("hidden", state.activeTab !== "levo");
+  elements.statusFilterWrap.classList.toggle("hidden", !config.statusField);
+  elements.authorizerFilterWrap.classList.toggle("hidden", state.activeTab !== "levo");
   elements.kmRateInput.value = state.kmRate;
   renderForm();
   renderFilters();
@@ -595,7 +810,7 @@ function render() {
 
 function renderForm() {
   elements.formFields.innerHTML = "";
-  getConfig().columns.forEach((column) => {
+  getInputColumns(getConfig()).forEach((column) => {
     const label = document.createElement("label");
     label.className = "field";
     label.textContent = column.label;
@@ -607,6 +822,7 @@ function renderForm() {
     elements.formFields.append(label);
   });
   bindLevoAutoFields();
+  bindBudgetAutoFields();
 }
 
 function createInput(column) {
@@ -650,6 +866,25 @@ function bindLevoAutoFields() {
   kmInput.addEventListener("input", updateFromKm);
 }
 
+function bindBudgetAutoFields() {
+  if (state.activeTab !== "orcamento") return;
+
+  const totalInput = document.querySelector('[name="total"]');
+  if (!totalInput) return;
+  const keys = ["kmEstimated", "kmRate", "toll", "food", "lodging", "otherCosts", "discount"];
+  const updateTotal = () => {
+    const record = {};
+    keys.forEach((key) => {
+      const input = document.querySelector(`[name="${key}"]`);
+      record[key] = parseDecimal(input?.value || 0);
+    });
+    totalInput.value = calculateBudget(record).total.toFixed(2);
+  };
+
+  keys.forEach((key) => document.querySelector(`[name="${key}"]`)?.addEventListener("input", updateTotal));
+  updateTotal();
+}
+
 function renderFilters() {
   const config = getConfig();
   const people = [...new Set(getRecords().map((record) => record[config.personField]).filter(Boolean))].sort((a, b) =>
@@ -661,11 +896,21 @@ function renderFilters() {
 
   elements.statusFilter.innerHTML = `<option value="">Todas</option>`;
   if (config.statusField) {
-    [...new Set(getRecords().map((record) => record[config.statusField]).filter(Boolean))]
+    [...new Set(getRecords().map((record) => getRecordStatusValue(record, config)).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b, "pt-BR"))
       .forEach((status) => elements.statusFilter.append(new Option(status, status)));
   }
   elements.statusFilter.value = state.filters.status;
+  elements.authorizerFilter.innerHTML = "";
+  if (state.activeTab === "levo") {
+    [...new Set(getRecords().map((record) => record.authorizer).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, "pt-BR"))
+      .forEach((authorizer) => {
+        const option = new Option(authorizer, authorizer);
+        option.selected = state.filters.authorizers.includes(authorizer);
+        elements.authorizerFilter.append(option);
+      });
+  }
   elements.searchInput.value = state.filters.search;
   elements.monthFilter.value = state.filters.archiveMonth;
   elements.startFilter.value = state.filters.start;
@@ -726,10 +971,13 @@ function renderTable() {
   records.forEach((record) => {
     const row = document.createElement("tr");
     if (config.statusField) {
-      row.className = getStatusClass(record[config.statusField]);
+      row.className = getStatusClass(getRecordStatusValue(record, config));
     }
+    const budgetPdfButton =
+      state.activeTab === "orcamento" ? `<button class="table-button" type="button" data-action="budget-pdf" data-id="${record.id}">PDF</button>` : "";
     row.innerHTML = `${config.columns.map((column) => tableCell(record, column)).join("")}
       <td class="actions-cell">
+        ${budgetPdfButton}
         <button class="table-button" type="button" data-action="edit" data-id="${record.id}">Editar</button>
         <button class="table-button danger" type="button" data-action="delete" data-id="${record.id}">Excluir</button>
       </td>`;
@@ -738,19 +986,27 @@ function renderTable() {
 
   elements.recordsTable.querySelectorAll("[data-action]").forEach((button) => {
     button.addEventListener("click", () => {
+      if (button.dataset.action === "budget-pdf") {
+        exportBudgetPdf(button.dataset.id);
+        return;
+      }
       button.dataset.action === "edit" ? editRecord(button.dataset.id) : deleteRecord(button.dataset.id);
     });
   });
 }
 
 function tableCell(record, column) {
+  if (column.type === "sequence") {
+    return `<td class="money-cell">${getMonthlySequence(record) || "-"}</td>`;
+  }
   if (isColumnHidden(column.key)) {
     return `<td class="masked-cell">••••</td>`;
   }
   let value = record[column.key];
+  if (column.key === "paymentStatus") value = value || "DEVENDO";
   if (column.type === "date") value = formatDate(value);
   if (column.type === "money") value = moneyFormatter.format(Number(value || 0));
-  if (column.key === "situation") return `<td><span class="status-pill">${escapeHtml(value || "-")}</span></td>`;
+  if (column.key === "situation" || column.key === "paymentStatus") return `<td><span class="status-pill">${escapeHtml(value || "-")}</span></td>`;
   const className = column.type === "money" || column.key === "km" ? " class=\"money-cell\"" : "";
   return `<td${className}>${escapeHtml(value || value === 0 ? value : "-")}</td>`;
 }
@@ -769,10 +1025,19 @@ function getReportColumns(config) {
 
 function getStatusClass(status) {
   const normalized = normalize(status);
+  if (normalized.includes("pago")) return "status-pago";
   if (normalized.includes("concluido")) return "status-concluido";
   if (normalized.includes("pendente")) return "status-pendente";
   if (normalized.includes("autorizador")) return "status-autorizador";
   return "";
+}
+
+function getRecordStatusValue(record, config) {
+  if (!config.statusField) return "";
+  if (state.activeTab === "taxista" && config.statusField === "paymentStatus") {
+    return record.paymentStatus || "DEVENDO";
+  }
+  return record[config.statusField] || "";
 }
 
 function renderSummary() {
@@ -797,12 +1062,12 @@ function exportCsv() {
   downloadBlob(new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" }), `${config.title}_${getArchiveSuffix()}_registros.csv`);
 }
 
-function exportPdf() {
-  downloadBlob(createPdfBlob(), getPdfFilename());
+async function exportPdf() {
+  downloadBlob(await createPdfBlob(), getPdfFilename());
 }
 
 async function shareWhatsApp() {
-  const pdfBlob = createPdfBlob();
+  const pdfBlob = await createPdfBlob();
   const pdfFile = new File([pdfBlob], getPdfFilename(), { type: "application/pdf" });
   const message = buildShareMessage();
 
@@ -823,8 +1088,9 @@ async function shareWhatsApp() {
   window.open(`https://wa.me/?text=${encodeURIComponent(`${message}\n\nPDF baixado no aparelho. Anexe o arquivo baixado nesta conversa.`)}`, "_blank", "noopener");
 }
 
-function createPdfBlob() {
-  return new Blob([createTablePdf()], { type: "application/pdf" });
+async function createPdfBlob() {
+  const pdfBytes = state.activeTab === "orcamento" ? await createBudgetListPdf() : createTablePdf();
+  return new Blob([pdfBytes], { type: "application/pdf" });
 }
 
 function createTablePdf() {
@@ -970,8 +1236,78 @@ function addPdfText(commands, text, x, y, size, font = "F1") {
   commands.push("0 0 0 rg", "BT", `/${font} ${fmt(size)} Tf`, `${fmt(x)} ${fmt(y)} Td`, `(${pdfEscape(text)}) Tj`, "ET");
 }
 
+function addCompanyPdfHeader(commands, x, y) {
+  const company = state.company || defaultCompany;
+  const lines = [
+    { text: company.name || "Lizardo Car", size: 15, font: "F2", gap: 18 },
+    company.slogan ? { text: company.slogan, size: 9, font: "F1", gap: 13 } : null,
+    { text: `CNPJ: ${company.cnpj || "-"}`, size: 8.5, font: "F1", gap: 12 },
+    { text: `E-mail: ${company.email || "-"}`, size: 8.5, font: "F1", gap: 12 },
+    { text: `Tel: ${company.phone || "-"}`, size: 8.5, font: "F1", gap: 12 },
+    { text: `Endereço: ${company.address || "-"}`, size: 8.5, font: "F1", gap: 12 },
+    { text: `Cidade: ${company.city || "-"}`, size: 8.5, font: "F1", gap: 12 },
+  ].filter(Boolean);
+  let currentY = y;
+  lines.forEach((line) => {
+    addPdfText(commands, line.text, x, currentY, line.size, line.font);
+    currentY -= line.gap;
+  });
+}
+
+function getPdfLogoData() {
+  if (!pdfLogoPromise) {
+    pdfLogoPromise = fetch("assets/lizardo-logo-pdf.jpg?v=20260708-6")
+      .then((response) => {
+        if (!response.ok) throw new Error("Logo nao encontrada");
+        return response.arrayBuffer();
+      })
+      .then((buffer) => ({
+        binary: arrayBufferToBinary(buffer),
+        width: 170,
+        height: 170,
+      }))
+      .catch((error) => {
+        console.error("Erro ao carregar a logo do PDF.", error);
+        return null;
+      });
+  }
+  return pdfLogoPromise;
+}
+
+function arrayBufferToBinary(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 8192) {
+    let chunk = "";
+    bytes.slice(index, index + 8192).forEach((byte) => {
+      chunk += String.fromCharCode(byte);
+    });
+    binary += chunk;
+  }
+  return binary;
+}
+
+function addPdfLogo(commands, x, y, width, height) {
+  commands.push("q", `${fmt(width)} 0 0 ${fmt(height)} ${fmt(x)} ${fmt(y)} cm`, "/Logo Do", "Q");
+}
+
+function addPdfLogoObject(objects, logoData) {
+  if (!logoData) return null;
+  const logoId = objects.length + 1;
+  objects.push(
+    `<< /Type /XObject /Subtype /Image /Width ${logoData.width} /Height ${logoData.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${logoData.binary.length} >>\nstream\n${logoData.binary}\nendstream`
+  );
+  return logoId;
+}
+
+function getPdfResources(logoId) {
+  const logoResource = logoId ? ` /XObject << /Logo ${logoId} 0 R >>` : "";
+  return `/Resources << /Font << /F1 3 0 R /F2 4 0 R >>${logoResource} >>`;
+}
+
 function getPdfColumnWidths(columns, tableWidth) {
   const levoWeights = {
+    monthNumber: 28,
     registration: 58,
     date: 62,
     cc: 34,
@@ -984,7 +1320,7 @@ function getPdfColumnWidths(columns, tableWidth) {
     situation: 75,
     km: 38,
   };
-  const simpleWeights = { date: 82, collaborator: 190, description: 410, value: 112 };
+  const simpleWeights = { monthNumber: 40, date: 82, collaborator: 190, description: 410, value: 112 };
   const weights = columns.map((column) => (state.activeTab === "levo" ? levoWeights[column.key] : simpleWeights[column.key]) || 90);
   const totalWeight = weights.reduce((sum, width) => sum + width, 0);
   return weights.map((width) => (width / totalWeight) * tableWidth);
@@ -1004,8 +1340,168 @@ function fmt(value) {
   return Number(value).toFixed(2).replace(/\.?0+$/, "");
 }
 
+function buildSinglePagePdf(content, width, height, logoData = null) {
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
+  ];
+  const logoId = addPdfLogoObject(objects, logoData);
+  const contentId = objects.length + 1;
+  objects.push(`<< /Length ${toWinAnsi(content).length} >>\nstream\n${content}\nendstream`);
+  const pageId = objects.length + 1;
+  objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}] ${getPdfResources(logoId)} /Contents ${contentId} 0 R >>`);
+  objects[1] = `<< /Type /Pages /Kids [${pageId} 0 R] /Count 1 >>`;
+  return buildPdfFromObjects(objects);
+}
+
+function buildPdfFromObjects(objects) {
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(toWinAnsi(pdf).length);
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xrefOffset = toWinAnsi(pdf).length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  offsets.slice(1).forEach((offset) => (pdf += `${String(offset).padStart(10, "0")} 00000 n \n`));
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return Uint8Array.from(toWinAnsi(pdf), (char) => char.charCodeAt(0));
+}
+
+function safeFilename(value) {
+  return normalize(value).replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "arquivo";
+}
+
 function getPdfFilename() {
   return `${getConfig().title}_${getArchiveSuffix()}_registros.pdf`;
+}
+
+function createBudgetListPdf() {
+  const records = getSortedRecords();
+  const total = records.reduce((sum, record) => sum + Number(record.total || 0), 0);
+  const page = { width: 595, height: 842, margin: 44 };
+  const rowsPerPage = 1;
+  const chunks = [];
+  for (let index = 0; index < Math.max(records.length, 1); index += rowsPerPage) {
+    chunks.push(records.length ? records.slice(index, index + rowsPerPage) : []);
+  }
+
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
+  ];
+  const pageRefs = [];
+
+  chunks.forEach((pageRows, pageIndex) => {
+    const content = buildBudgetListPage({
+      page,
+      pageIndex,
+      pageRows,
+      total,
+      totalPages: chunks.length,
+      totalRecords: records.length,
+    });
+    const contentId = objects.length + 1;
+    objects.push(`<< /Length ${toWinAnsi(content).length} >>\nstream\n${content}\nendstream`);
+    const pageId = objects.length + 1;
+    pageRefs.push(pageId);
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${page.width} ${page.height}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${contentId} 0 R >>`);
+  });
+
+  objects[1] = `<< /Type /Pages /Kids [${pageRefs.map((id) => `${id} 0 R`).join(" ")}] /Count ${pageRefs.length} >>`;
+  return buildPdfFromObjects(objects);
+}
+
+function buildBudgetListPage({ page, pageIndex, pageRows, total, totalPages, totalRecords }) {
+  const commands = ["0.45 w", "0.08 0.12 0.16 RG", "0 0 0 rg"];
+  addCompanyPdfHeader(commands, page.margin, 800);
+  addPdfText(commands, `Pagina ${pageIndex + 1} de ${totalPages}`, page.width - 115, 800, 9, "F1");
+
+  const infoX = 390;
+  addPdfText(commands, "Orçamento", infoX, 800, 16, "F2");
+  addPdfText(commands, `Gerado em: ${new Date().toLocaleString("pt-BR")}`, infoX, 778, 9, "F1");
+  addPdfText(commands, `Registros: ${totalRecords}`, infoX, 764, 9, "F1");
+  addPdfText(commands, `Total: ${moneyFormatter.format(total)}`, infoX, 750, 9, "F1");
+  addPdfText(commands, state.filters.archiveMonth ? `Mes arquivado: ${formatArchiveMonth(state.filters.archiveMonth)}` : "Mes arquivado: Todos", infoX, 736, 9, "F1");
+
+  let y = 650;
+  if (!pageRows.length) {
+    addPdfText(commands, "Nenhum orçamento encontrado para os filtros atuais.", page.margin, y, 11, "F1");
+    return commands.join("\n");
+  }
+
+  pageRows.forEach((record) => {
+    drawBudgetRecord(commands, record, page.margin, y, page.width - page.margin * 2);
+  });
+
+  return commands.join("\n");
+}
+
+function drawBudgetRecord(commands, record, x, y, width) {
+  addPdfText(commands, `Orçamento de viagem - ${record.client || "Cliente"}`, x, y, 13, "F2");
+  y -= 22;
+  commands.push("0.08 0.12 0.16 RG", `${fmt(x)} ${fmt(y + 8)} m ${fmt(x + width)} ${fmt(y + 8)} l S`);
+
+  y = drawBudgetTextLine(commands, "Data", formatDate(record.date) || "-", x, y, width);
+  y = drawBudgetTextLine(commands, "Cliente", record.client || "-", x, y, width);
+  y = drawBudgetTextLine(commands, "Origem", record.origin || "-", x, y, width);
+  y = drawBudgetTextLine(commands, "Destino", record.destination || "-", x, y, width);
+  y = drawBudgetTextLine(commands, "Tipo da viagem", record.tripType || "-", x, y, width);
+
+  y -= 10;
+  addPdfText(commands, "Custos da viagem", x, y, 11, "F2");
+  y -= 20;
+  y = drawBudgetTextLine(commands, "KM estimado", `${numberFormatter.format(Number(record.kmEstimated || 0))} km`, x, y, width);
+  y = drawBudgetTextLine(commands, "Valor por KM", moneyFormatter.format(Number(record.kmRate || 0)), x, y, width);
+  y = drawBudgetTextLine(commands, "Pedágio", moneyFormatter.format(Number(record.toll || 0)), x, y, width);
+  y = drawBudgetTextLine(commands, "Alimentação", moneyFormatter.format(Number(record.food || 0)), x, y, width);
+  y = drawBudgetTextLine(commands, "Hospedagem", moneyFormatter.format(Number(record.lodging || 0)), x, y, width);
+  y = drawBudgetTextLine(commands, "Outros custos", moneyFormatter.format(Number(record.otherCosts || 0)), x, y, width);
+  y = drawBudgetTextLine(commands, "Desconto", moneyFormatter.format(Number(record.discount || 0)), x, y, width);
+
+  y -= 10;
+  addPdfText(commands, "Condição", x, y, 11, "F2");
+  y -= 20;
+  y = drawBudgetTextLine(commands, "Validade", record.validity || "-", x, y, width);
+  y = drawBudgetTextLine(commands, "Status", record.status || "EM ABERTO", x, y, width);
+  y = drawBudgetTextLine(commands, "Observações", record.notes || "-", x, y, width);
+
+  y -= 22;
+  commands.push("0.90 0.95 0.90 rg", `${fmt(x)} ${fmt(y - 12)} ${fmt(width)} 34 re f`, "0.08 0.12 0.16 RG", `${fmt(x)} ${fmt(y - 12)} ${fmt(width)} 34 re S`);
+  addPdfText(commands, "TOTAL", x + 10, y + 2, 11, "F2");
+  addPdfText(commands, moneyFormatter.format(Number(record.total || 0)), x + width - 115, y + 2, 11, "F2");
+}
+
+function drawBudgetTextLine(commands, label, value, x, y, width) {
+  addPdfText(commands, `${label}:`, x, y, 9.5, "F2");
+  addPdfText(commands, fitPdfText(value, width - 135, 9.5), x + 120, y, 9.5, "F1");
+  return y - 18;
+}
+
+async function exportBudgetPdf(id) {
+  const record = state.data.orcamento.find((item) => item.id === id);
+  if (!record) return;
+  const filename = `Orcamento_${safeFilename(record.client || "cliente")}_${safeFilename(formatDate(record.date) || "sem_data")}.pdf`;
+  downloadBlob(new Blob([await createBudgetPdf(record)], { type: "application/pdf" }), filename);
+}
+
+function createBudgetPdf(record) {
+  const page = { width: 595, height: 842, margin: 44 };
+  const content = buildBudgetListPage({
+    page,
+    pageIndex: 0,
+    pageRows: [record],
+    total: Number(record.total || 0),
+    totalPages: 1,
+    totalRecords: 1,
+  });
+  const commands = [content];
+  addPdfText(commands, "Documento gerado pelo Controle de Empresas e Viagens.", page.margin, 48, 9, "F1");
+  return buildSinglePagePdf(commands.join("\n"), page.width, page.height);
 }
 
 function buildShareMessage() {
@@ -1063,6 +1559,7 @@ function buildReportLines() {
 function getPdfWidths(config) {
   if (state.activeTab === "levo") {
     return {
+      monthNumber: 3,
       registration: 9,
       date: 10,
       cc: 5,
@@ -1078,7 +1575,7 @@ function getPdfWidths(config) {
   }
 
   return config.columns.reduce((widths, column) => {
-    const defaults = { date: 10, collaborator: 24, description: 44, value: 12 };
+    const defaults = { monthNumber: 3, date: 10, collaborator: 24, description: 44, value: 12 };
     widths[column.key] = defaults[column.key] || 16;
     return widths;
   }, {});
@@ -1091,6 +1588,7 @@ function fitCell(value, width) {
 }
 
 function displayValue(record, column, moneyAsText) {
+  if (column.type === "sequence") return getMonthlySequence(record);
   const value = record[column.key];
   if (column.type === "date") return formatDate(value);
   if (column.type === "money") return moneyAsText ? moneyFormatter.format(Number(value || 0)) : Number(value || 0).toFixed(2).replace(".", ",");
@@ -1216,7 +1714,21 @@ function pdfEscape(value) {
   return toWinAnsi(value).replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
 }
 
-loadState();
-bindEvents();
-render();
-startNewRecord();
+async function startApp() {
+  await loadState();
+  bindEvents();
+  render();
+  startNewRecord();
+
+  cloudUnsubscribe = listenCloudState((cloudState) => {
+    if (!cloudState?.data) return;
+    applyingCloudState = true;
+    applySavedState(cloudState);
+    writeLocalState();
+    applyingCloudState = false;
+    render();
+    startNewRecord();
+  });
+}
+
+startApp();

@@ -283,7 +283,7 @@ button {
 
 .toolbar {
   display: grid;
-  grid-template-columns: minmax(220px, 1.5fr) repeat(5, minmax(130px, 1fr));
+  grid-template-columns: minmax(220px, 1.5fr) repeat(6, minmax(130px, 1fr));
   gap: 12px;
   padding: 14px;
 }
@@ -458,6 +458,10 @@ tbody tr:nth-child(even) {
 }
 
 tbody tr.status-concluido {
+  background: #4dad32;
+}
+
+tbody tr.status-pago {
   background: #4dad32;
 }
 
