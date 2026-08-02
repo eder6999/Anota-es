@@ -38,7 +38,7 @@ const configs = {
       { key: "value", label: "Valor do frete", type: "money", sensitive: true },
       { key: "kmStart", label: "KM saída", type: "number", sensitive: true },
       { key: "kmEnd", label: "KM chegada", type: "number", readonly: true, sensitive: true },
-      { key: "situation", label: "Situação", type: "select", options: ["CONCLUÍDO", "AUTORIZADOR", "PENDENTE"] },
+      { key: "situation", label: "Situação", type: "select", options: ["CONCLUÍDO", "AUTORIZ.", "PENDENTE", "AGUARD. AUTORIZ."] },
       { key: "km", label: "KM", type: "number", sensitive: true },
     ],
   },
@@ -59,6 +59,7 @@ const configs = {
     title: "Encubatório",
     screenTitle: "Encubatório",
     personField: "collaborator",
+    statusField: "situation",
     valueField: "value",
     columns: [
       { key: "monthNumber", label: "Nº", type: "sequence" },
@@ -66,6 +67,7 @@ const configs = {
       { key: "collaborator", label: "Colaborador", type: "text" },
       { key: "description", label: "Descrição", type: "text" },
       { key: "value", label: "Valor", type: "money" },
+      { key: "situation", label: "Situação", type: "select", options: ["PENDENTE", "CONCLUÍDO"] },
     ],
   },
   viagensClientes: {
@@ -88,7 +90,7 @@ const configs = {
     personField: "collaborator",
     statusField: "paymentStatus",
     valueField: "value",
-    taxistaPaymentColumn: { key: "paymentStatus", label: "Situacao", type: "select", options: ["DEVENDO", "PAGO"] },
+    taxistaPaymentColumn: { key: "paymentStatus", label: "Situacao", type: "select", options: ["A PAGAR", "PAGO", "CONFERIR"] },
     columns: [
       { key: "date", label: "Data", type: "date" },
       { key: "collaborator", label: "Taxista", type: "text" },
@@ -123,6 +125,24 @@ const configs = {
       { key: "total", label: "Total", type: "money", readonly: true },
     ],
   },
+  simulador: {
+    title: "Simulador de Valores",
+    screenTitle: "Simulador de Valores",
+    personField: "description",
+    personLabel: "Descricao",
+    peopleLabel: "Simulacoes",
+    valueField: "total",
+    columns: [
+      { key: "date", label: "Data inicial", type: "date" },
+      { key: "dateEnd", label: "Data final", type: "date" },
+      { key: "description", label: "Descricao", type: "text" },
+      { key: "value", label: "Valor inicial", type: "money" },
+      { key: "percent", label: "Porcentagem (%)", type: "number" },
+      { key: "days", label: "Dias", type: "number", readonly: true },
+      { key: "interest", label: "Juros", type: "money", readonly: true },
+      { key: "total", label: "Total", type: "money", readonly: true },
+    ],
+  },
 };
 
 const sampleData = {
@@ -152,11 +172,12 @@ const sampleData = {
   ],
   taxista: [],
   orcamento: [],
+  simulador: [],
 };
 
 const state = {
   activeTab: "levo",
-  data: { levo: [], bomSabor: [], encubatorio: [], viagensClientes: [], taxista: [], orcamento: [] },
+  data: { levo: [], bomSabor: [], encubatorio: [], viagensClientes: [], taxista: [], orcamento: [], simulador: [] },
   editingId: null,
   filters: { search: "", person: "", status: "", authorizers: [], archiveMonth: "", start: "", end: "" },
   hiddenColumns: { levo: [] },
@@ -253,6 +274,23 @@ function calculateBudget(record) {
   const discount = Number(record.discount || 0);
   const total = kmEstimated * kmRate + toll + food + lodging + otherCosts - discount;
   return { ...record, total: Math.max(0, total) };
+}
+
+function calculateSimulator(record) {
+  const value = Number(record.value || 0);
+  const percent = Number(record.percent || 0);
+  const days = getDateDiffDays(record.date, record.dateEnd);
+  const interest = value * (percent / 100) * (days / 30);
+  const total = value + interest;
+  return { ...record, days, interest: Math.max(0, interest), total: Math.max(0, total) };
+}
+
+function getDateDiffDays(startDate, endDate) {
+  if (!startDate || !endDate) return 0;
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 0;
+  return Math.max(0, Math.round((end - start) / 86400000));
 }
 
 function getLocalDateValue(date = new Date()) {
@@ -457,8 +495,14 @@ function saveFromForm(event) {
     record.status = record.status || "EM ABERTO";
     record = calculateBudget(record);
   }
+  if (state.activeTab === "simulador") {
+    record = calculateSimulator(record);
+  }
+  if (state.activeTab === "encubatorio") {
+    record.situation = record.situation || "PENDENTE";
+  }
   if (state.activeTab === "taxista") {
-    record.paymentStatus = record.paymentStatus || "DEVENDO";
+    record.paymentStatus = normalizeTaxistaPaymentStatus(record.paymentStatus);
   }
 
   const records = getRecords();
@@ -597,7 +641,9 @@ function rowToSimpleRecord(cells, config) {
   });
 
   if (!record.date && !record.collaborator && !record.description && !record.value) return null;
-  if (state.activeTab === "taxista") record.paymentStatus = record.paymentStatus || "DEVENDO";
+  if (state.activeTab === "simulador") record = calculateSimulator(record);
+  if (state.activeTab === "encubatorio") record.situation = record.situation || "PENDENTE";
+  if (state.activeTab === "taxista") record.paymentStatus = normalizeTaxistaPaymentStatus(record.paymentStatus);
   return record;
 }
 
@@ -732,14 +778,20 @@ function startNewRecord() {
   elements.saveButton.textContent = "Salvar registro";
   const dateInput = document.querySelector('[name="date"]');
   if (dateInput) dateInput.value = getLocalDateValue();
+  const dateEndInput = document.querySelector('[name="dateEnd"]');
+  if (dateEndInput) dateEndInput.value = getLocalDateValue();
   const statusInput = document.querySelector('[name="status"]');
   if (statusInput) statusInput.value = "EM ABERTO";
   const totalInput = document.querySelector('[name="total"]');
   if (totalInput) totalInput.value = "0.00";
+  const daysInput = document.querySelector('[name="days"]');
+  if (daysInput) daysInput.value = "0";
+  const interestInput = document.querySelector('[name="interest"]');
+  if (interestInput) interestInput.value = "0.00";
   const situationInput = document.querySelector('[name="situation"]');
-  if (situationInput) situationInput.value = "CONCLUÍDO";
+  if (situationInput) situationInput.value = state.activeTab === "encubatorio" ? "PENDENTE" : "CONCLUÍDO";
   const paymentStatusInput = document.querySelector('[name="paymentStatus"]');
-  if (paymentStatusInput) paymentStatusInput.value = "DEVENDO";
+  if (paymentStatusInput) paymentStatusInput.value = "A PAGAR";
 }
 
 function clearFilters() {
@@ -823,6 +875,7 @@ function renderForm() {
   });
   bindLevoAutoFields();
   bindBudgetAutoFields();
+  bindSimulatorAutoFields();
 }
 
 function createInput(column) {
@@ -883,6 +936,32 @@ function bindBudgetAutoFields() {
 
   keys.forEach((key) => document.querySelector(`[name="${key}"]`)?.addEventListener("input", updateTotal));
   updateTotal();
+}
+
+function bindSimulatorAutoFields() {
+  if (state.activeTab !== "simulador") return;
+
+  const keys = ["date", "dateEnd", "value", "percent"];
+  const daysInput = document.querySelector('[name="days"]');
+  const interestInput = document.querySelector('[name="interest"]');
+  const totalInput = document.querySelector('[name="total"]');
+  if (!daysInput || !interestInput || !totalInput) return;
+
+  const updateSimulation = () => {
+    const record = {
+      date: document.querySelector('[name="date"]')?.value || "",
+      dateEnd: document.querySelector('[name="dateEnd"]')?.value || "",
+      value: parseDecimal(document.querySelector('[name="value"]')?.value || 0),
+      percent: parseDecimal(document.querySelector('[name="percent"]')?.value || 0),
+    };
+    const calculated = calculateSimulator(record);
+    daysInput.value = calculated.days;
+    interestInput.value = calculated.interest.toFixed(2);
+    totalInput.value = calculated.total.toFixed(2);
+  };
+
+  keys.forEach((key) => document.querySelector(`[name="${key}"]`)?.addEventListener("input", updateSimulation));
+  updateSimulation();
 }
 
 function renderFilters() {
@@ -1003,7 +1082,8 @@ function tableCell(record, column) {
     return `<td class="masked-cell">••••</td>`;
   }
   let value = record[column.key];
-  if (column.key === "paymentStatus") value = value || "DEVENDO";
+  if (state.activeTab === "encubatorio" && column.key === "situation") value = value || "PENDENTE";
+  if (column.key === "paymentStatus") value = normalizeTaxistaPaymentStatus(value);
   if (column.type === "date") value = formatDate(value);
   if (column.type === "money") value = moneyFormatter.format(Number(value || 0));
   if (column.key === "situation" || column.key === "paymentStatus") return `<td><span class="status-pill">${escapeHtml(value || "-")}</span></td>`;
@@ -1026,24 +1106,46 @@ function getReportColumns(config) {
 function getStatusClass(status) {
   const normalized = normalize(status);
   if (normalized.includes("pago")) return "status-pago";
+  if (normalized.includes("conferir")) return "status-conferir";
   if (normalized.includes("concluido")) return "status-concluido";
+  if ((normalized.includes("aguard") && normalized.includes("autoriz")) || normalized.includes("autor pendente")) return "status-autor-pendente";
   if (normalized.includes("pendente")) return "status-pendente";
-  if (normalized.includes("autorizador")) return "status-autorizador";
+  if (normalized.includes("autoriz")) return "status-autorizador";
   return "";
 }
 
 function getRecordStatusValue(record, config) {
   if (!config.statusField) return "";
   if (state.activeTab === "taxista" && config.statusField === "paymentStatus") {
-    return record.paymentStatus || "DEVENDO";
+    return normalizeTaxistaPaymentStatus(record.paymentStatus);
+  }
+  if (state.activeTab === "encubatorio" && config.statusField === "situation") {
+    return record.situation || "PENDENTE";
   }
   return record[config.statusField] || "";
+}
+
+function isTaxistaPaid(record) {
+  return state.activeTab === "taxista" && normalize(normalizeTaxistaPaymentStatus(record.paymentStatus)).includes("pago");
+}
+
+function normalizeTaxistaPaymentStatus(value) {
+  const normalized = normalize(value || "");
+  if (!normalized || normalized.includes("devendo") || normalized.includes("a pagar")) return "A PAGAR";
+  if (normalized.includes("pago")) return "PAGO";
+  if (normalized.includes("conferir")) return "CONFERIR";
+  return String(value || "A PAGAR").toUpperCase();
+}
+
+function getRecordValue(record, config = getConfig()) {
+  if (config.valueField === "value" && isTaxistaPaid(record)) return 0;
+  return Number(record[config.valueField] || 0);
 }
 
 function renderSummary() {
   const config = getConfig();
   const records = getFilteredRecords();
-  const total = records.reduce((sum, record) => sum + Number(record[config.valueField] || 0), 0);
+  const total = records.reduce((sum, record) => sum + getRecordValue(record, config), 0);
   const people = new Set(records.map((record) => record[config.personField]).filter(Boolean));
   const valueHidden = isColumnHidden(config.valueField);
   elements.totalRecords.textContent = numberFormatter.format(records.length);
@@ -1097,7 +1199,7 @@ function createTablePdf() {
   const config = getConfig();
   const records = getSortedRecords();
   const columns = getReportColumns(config);
-  const total = records.reduce((sum, record) => sum + Number(record[config.valueField] || 0), 0);
+  const total = records.reduce((sum, record) => sum + getRecordValue(record, config), 0);
   const valueHidden = isColumnHidden(config.valueField);
   const page = { width: 842, height: 595, margin: 24 };
   const fontSize = state.activeTab === "levo" ? 7.4 : 10;
@@ -1507,7 +1609,7 @@ function createBudgetPdf(record) {
 function buildShareMessage() {
   const config = getConfig();
   const records = getSortedRecords();
-  const total = records.reduce((sum, record) => sum + Number(record[config.valueField] || 0), 0);
+  const total = records.reduce((sum, record) => sum + getRecordValue(record, config), 0);
   const valueHidden = isColumnHidden(config.valueField);
   const lines = records
     .slice(0, 8)
@@ -1526,7 +1628,7 @@ function buildShareMessage() {
 function buildReportLines() {
   const config = getConfig();
   const records = getSortedRecords();
-  const total = records.reduce((sum, record) => sum + Number(record[config.valueField] || 0), 0);
+  const total = records.reduce((sum, record) => sum + getRecordValue(record, config), 0);
   const valueHidden = isColumnHidden(config.valueField);
   const lines = [
     config.title,

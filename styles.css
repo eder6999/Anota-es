@@ -465,8 +465,16 @@ tbody tr.status-pago {
   background: #4dad32;
 }
 
+tbody tr.status-conferir {
+  background: #7dd3fc;
+}
+
 tbody tr.status-pendente {
   background: #f06b6b;
+}
+
+tbody tr.status-autor-pendente {
+  background: #c77dff;
 }
 
 tbody tr.status-autorizador {
